@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Customer, Supplier, Product, Invoice, Purchase, LedgerEntry, AppSettings, DashboardStats } from '@/types';
+import { Customer, Supplier, Product, Invoice, Purchase, LedgerEntry, AppSettings, DashboardStats, BankTransaction, Loan } from '@/types';
 import { storage, generateId } from '@/lib/storage';
 
 interface DataContextType {
@@ -33,6 +33,20 @@ interface DataContextType {
   addPurchase: (purchase: Omit<Purchase, 'id' | 'createdAt'>) => void;
   updatePurchase: (id: string, purchase: Partial<Purchase>) => void;
   deletePurchase: (id: string) => void;
+  getNextPurchaseNumber: () => string;
+
+  // Bank & Cash
+  bankTransactions: BankTransaction[];
+  addBankTransaction: (tx: Omit<BankTransaction, 'id' | 'createdAt'>) => void;
+  updateBankTransaction: (id: string, tx: Partial<BankTransaction>) => void;
+  deleteBankTransaction: (id: string) => void;
+  getBalances: () => { bank: number; cash: number };
+
+  // Loans
+  loans: Loan[];
+  addLoan: (loan: Omit<Loan, 'id' | 'createdAt'>) => void;
+  updateLoan: (id: string, loan: Partial<Loan>) => void;
+  deleteLoan: (id: string) => void;
 
   // Ledger
   ledgerEntries: LedgerEntry[];
@@ -79,6 +93,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
 
   useEffect(() => {
@@ -88,6 +104,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setInvoices(storage.get('invoices', []));
     setPurchases(storage.get('purchases', []));
     setLedgerEntries(storage.get('ledgerEntries', []));
+    setBankTransactions(storage.get('bankTransactions', []));
+    setLoans(storage.get('loans', []));
     setSettings(storage.get('settings', defaultSettings));
   }, []);
 
@@ -223,9 +241,96 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       amount: purchase.total,
       reference: purchase.purchaseNumber,
     });
+
+    // Auto stock update for received purchases
+    if (purchase.status === 'received') {
+      applyStockChange(purchase.items, 1);
+    }
+  };
+
+  const applyStockChange = (items: Invoice['items'], direction: 1 | -1) => {
+    const current = storage.get<Product[]>('products', []);
+    const updatedProducts = current.map(product => {
+      const matched = items.filter(item => item.productId === product.id);
+      if (matched.length === 0) return product;
+      const qty = matched.reduce((sum, item) => sum + item.quantity, 0);
+      return { ...product, quantity: Math.max(0, product.quantity + direction * qty) };
+    });
+    setProducts(updatedProducts);
+    storage.set('products', updatedProducts);
+  };
+
+  const getNextPurchaseNumber = (): string => {
+    const year = new Date().getFullYear().toString().slice(-2);
+    const count = purchases.length + 1;
+    return `${settings.purchasePrefix}${year}${count.toString().padStart(4, '0')}`;
+  };
+
+  // Bank & Cash
+  const addBankTransaction = (tx: Omit<BankTransaction, 'id' | 'createdAt'>) => {
+    const newTx: BankTransaction = {
+      ...tx,
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...bankTransactions, newTx];
+    setBankTransactions(updated);
+    storage.set('bankTransactions', updated);
+  };
+
+  const updateBankTransaction = (id: string, tx: Partial<BankTransaction>) => {
+    const updated = bankTransactions.map(t => t.id === id ? { ...t, ...tx } : t);
+    setBankTransactions(updated);
+    storage.set('bankTransactions', updated);
+  };
+
+  const deleteBankTransaction = (id: string) => {
+    const updated = bankTransactions.filter(t => t.id !== id);
+    setBankTransactions(updated);
+    storage.set('bankTransactions', updated);
+  };
+
+  const getBalances = () => {
+    const compute = (account: 'bank' | 'cash') =>
+      bankTransactions
+        .filter(t => t.account === account)
+        .reduce((sum, t) => sum + (t.type === 'deposit' ? t.amount : -t.amount), 0);
+    return { bank: compute('bank'), cash: compute('cash') };
+  };
+
+  // Loans
+  const addLoan = (loan: Omit<Loan, 'id' | 'createdAt'>) => {
+    const newLoan: Loan = {
+      ...loan,
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...loans, newLoan];
+    setLoans(updated);
+    storage.set('loans', updated);
+  };
+
+  const updateLoan = (id: string, loan: Partial<Loan>) => {
+    const updated = loans.map(l => l.id === id ? { ...l, ...loan } : l);
+    setLoans(updated);
+    storage.set('loans', updated);
+  };
+
+  const deleteLoan = (id: string) => {
+    const updated = loans.filter(l => l.id !== id);
+    setLoans(updated);
+    storage.set('loans', updated);
   };
 
   const updatePurchase = (id: string, purchase: Partial<Purchase>) => {
+    const existing = purchases.find(p => p.id === id);
+    if (existing && purchase.status && purchase.status !== existing.status) {
+      if (purchase.status === 'received' && existing.status !== 'received') {
+        applyStockChange(existing.items, 1);
+      } else if (existing.status === 'received' && purchase.status !== 'received') {
+        applyStockChange(existing.items, -1);
+      }
+    }
     const updated = purchases.map(p => p.id === id ? { ...p, ...purchase } : p);
     setPurchases(updated);
     storage.set('purchases', updated);
@@ -293,7 +398,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       totalExpense,
       profit: totalIncome - totalExpense,
       stockValue,
-      cashBalance: totalIncome - totalExpense,
+      cashBalance: bankTransactions.length > 0
+        ? bankTransactions.reduce((sum, t) => sum + (t.type === 'deposit' ? t.amount : -t.amount), 0)
+        : totalIncome - totalExpense,
       receivables,
       payables,
       invoiceCount: invoices.length,
@@ -310,6 +417,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setInvoices([]);
     setPurchases([]);
     setLedgerEntries([]);
+    setBankTransactions([]);
+    setLoans([]);
     setSettings(defaultSettings);
   };
 
@@ -326,6 +435,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setInvoices(storage.get('invoices', []));
       setPurchases(storage.get('purchases', []));
       setLedgerEntries(storage.get('ledgerEntries', []));
+      setBankTransactions(storage.get('bankTransactions', []));
+      setLoans(storage.get('loans', []));
       setSettings(storage.get('settings', defaultSettings));
     }
     return success;
@@ -355,6 +466,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addPurchase,
         updatePurchase,
         deletePurchase,
+        getNextPurchaseNumber,
+        bankTransactions,
+        addBankTransaction,
+        updateBankTransaction,
+        deleteBankTransaction,
+        getBalances,
+        loans,
+        addLoan,
+        updateLoan,
+        deleteLoan,
         ledgerEntries,
         addLedgerEntry,
         updateLedgerEntry,
