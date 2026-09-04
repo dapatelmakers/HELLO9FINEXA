@@ -110,10 +110,25 @@ export interface BankTransaction {
   id: string;
   date: string;
   type: 'deposit' | 'withdrawal' | 'transfer';
+  account: 'bank' | 'cash';
   description: string;
   amount: number;
-  balance: number;
   reference?: string;
+  reconciled: boolean;
+  loanId?: string;
+  createdAt: string;
+}
+
+export interface Loan {
+  id: string;
+  lender: string;
+  type: 'taken' | 'given';
+  principal: number;
+  interestRate: number;
+  startDate: string;
+  tenureMonths: number;
+  amountRepaid: number;
+  notes?: string;
   createdAt: string;
 }
 
@@ -135,8 +150,14 @@ export interface AppSettings {
   theme: ThemeType;
   darkMode: boolean;
   companyLogo?: string;
+  companyName?: string;
+  companyGstin?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyEmail?: string;
   invoicePrefix: string;
   purchasePrefix: string;
   currency: string;
   fiscalYearStart: string;
 }
+
