@@ -1,0 +1,1 @@
+- Cloud sync mirrors the full local data set as one snapshot per signed-in user; local storage stays the source of truth so the app works offline.
