@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ThemeType } from '@/types';
+import { CloudSyncPanel } from '@/components/CloudSyncPanel';
 
 const themes: { id: ThemeType; name: string; colors: string[] }[] = [
   { id: 'light', name: 'Light', colors: ['#0ea5e9', '#14b8a6', '#f8fafc'] },
@@ -85,6 +86,7 @@ export const Settings: React.FC = () => {
   const tabs = [
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'data', label: 'Data Management', icon: Database },
+    { id: 'cloud', label: 'Cloud Sync', icon: Shield },
     { id: 'about', label: 'About', icon: Info },
   ];
 
@@ -116,6 +118,7 @@ export const Settings: React.FC = () => {
 
         {/* Content */}
         <div className="flex-1">
+          {activeTab === 'cloud' && <CloudSyncPanel />}
           {activeTab === 'appearance' && (
             <div className="glass-card rounded-xl p-6 space-y-6">
               <div>

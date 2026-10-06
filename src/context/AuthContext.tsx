@@ -31,8 +31,11 @@ export const useAuth = () => {
 };
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(() => storage.get<User[]>('users', []));
+  const [user, setUser] = useState<User | null>(() => {
+    const id = storage.get<string>('currentUser', '');
+    return storage.get<User[]>('users', []).find(u => u.id === id) || null;
+  });
 
   useEffect(() => {
     const storedUsers = storage.get<User[]>('users', []);
