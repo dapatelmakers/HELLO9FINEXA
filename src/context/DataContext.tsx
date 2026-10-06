@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Customer, Supplier, Product, Invoice, Purchase, LedgerEntry, AppSettings, DashboardStats, BankTransaction, Loan } from '@/types';
 import { storage, generateId } from '@/lib/storage';
+import { isCloudSyncEnabled, pushToCloud } from '@/lib/cloudSync';
 
 interface DataContextType {
   // Customers
@@ -107,6 +108,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setBankTransactions(storage.get('bankTransactions', []));
     setLoans(storage.get('loans', []));
     setSettings(storage.get('settings', defaultSettings));
+  }, []);
+
+  // Cloud auto-sync (local data is always the source; cloud is a mirror)
+  useEffect(() => {
+    const sync = () => { if (isCloudSyncEnabled()) pushToCloud().catch(() => {}); };
+    const t = setInterval(sync, 60000);
+    window.addEventListener('online', sync);
+    return () => { clearInterval(t); window.removeEventListener('online', sync); };
   }, []);
 
   // Customers
